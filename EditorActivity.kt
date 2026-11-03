@@ -26,7 +26,7 @@ import kotlinx.coroutines.withContext
 class EditorActivity : AppCompatActivity() {
 
     companion object {
-        private const val PREVIEW_MAX = 3000    // ekranda incelemek için
+        private const val PREVIEW_MAX = 4096    // ekranda incelemek için
         private const val SAVE_MAX = 16000      // kayıt: tam çözünürlük
     }
 
@@ -85,6 +85,13 @@ class EditorActivity : AppCompatActivity() {
             true
         }
         btnSave.setOnClickListener { save() }
+        val panel = findViewById<View>(R.id.adjustPanel)
+        val btnPanel = findViewById<Button>(R.id.btnPanel)
+        btnPanel.setOnClickListener {
+            val show = panel.visibility != View.VISIBLE
+            panel.visibility = if (show) View.VISIBLE else View.GONE
+            btnPanel.text = if (show) "Gizle" else "Ayarlar"
+        }
 
         loadPreview()
     }

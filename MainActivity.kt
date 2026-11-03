@@ -5,6 +5,9 @@ import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureRequest
 import android.net.Uri
@@ -12,12 +15,14 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Size
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -52,16 +57,28 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
+import kotlin.math.ln
+import kotlin.math.pow
 
 @OptIn(ExperimentalCamera2Interop::class)
 @SuppressLint("ClickableViewAccessibility", "SetTextI18n")
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        /** Telefonun kendi yakınlaştırma sınırının üstüne eklenen dijital kat. */
+        private const val EXTRA_ZOOM = 4f
+        private const val ZOOM_STEPS = 1000
+    }
+
     private lateinit var previewView: PreviewView
+    private lateinit var touchLayer: View
     private lateinit var focusRing: View
     private lateinit var btnMacro: Button
     private lateinit var btnLens: Button
     private lateinit var btnTorch: Button
+    private lateinit var btnSettings: Button
+    private lateinit var settingsPanel: View
+    private lateinit var presetRow: LinearLayout
     private lateinit var btnAf: Button
     private lateinit var infoText: TextView
     private lateinit var zoomText: TextView
@@ -85,6 +102,13 @@ class MainActivity : AppCompatActivity() {
     private var evLower = 0
     private var lastUri: Uri? = null
     private var scaling = false
+
+    // Yakınlaştırma: toplam = kamera yakınlaştırması × ekstra dijital
+    private var camMin = 1f
+    private var camMax = 1f
+    private var maxTotalZoom = EXTRA_ZOOM
+    private var totalZoom = 1f
+    private var extraZoom = 1f
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -115,10 +139,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun bindViews() {
         previewView = findViewById(R.id.previewView)
+        previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        touchLayer = findViewById(R.id.touchLayer)
         focusRing = findViewById(R.id.focusRing)
         btnMacro = findViewById(R.id.btnMacro)
         btnLens = findViewById(R.id.btnLens)
         btnTorch = findViewById(R.id.btnTorch)
+        btnSettings = findViewById(R.id.btnSettings)
+        settingsPanel = findViewById(R.id.settingsPanel)
+        presetRow = findViewById(R.id.presetRow)
         btnAf = findViewById(R.id.btnAf)
         infoText = findViewById(R.id.infoText)
         zoomText = findViewById(R.id.zoomText)
@@ -136,13 +165,19 @@ class MainActivity : AppCompatActivity() {
         btnLens.setOnClickListener {
             if (backCameras.size > 1) {
                 lensIndex = (lensIndex + 1) % backCameras.size
+                totalZoom = 1f
                 bindCamera()
             } else toast("Telefon başka bir arka lensi uygulamalara açmıyor")
         }
         btnTorch.setOnClickListener {
             torchOn = !torchOn
             camera?.cameraControl?.enableTorch(torchOn)
-            btnTorch.text = if (torchOn) "Işık: AÇIK" else "Işık: KAPALI"
+            btnTorch.text = if (torchOn) "Işık ●" else "Işık"
+        }
+        btnSettings.setOnClickListener {
+            val show = settingsPanel.visibility != View.VISIBLE
+            settingsPanel.visibility = if (show) View.VISIBLE else View.GONE
+            btnSettings.text = if (show) "Ayar ▲" else "Ayar ▼"
         }
         btnAf.setOnClickListener { resetAutoFocus() }
         btnCapture.setOnClickListener { takePhoto() }
@@ -154,9 +189,10 @@ class MainActivity : AppCompatActivity() {
             lastUri?.let { openEditor(it) } ?: toast("Henüz fotoğraf çekilmedi")
         }
 
+        zoomSeek.max = ZOOM_STEPS
         zoomSeek.setOnSeekBarChangeListener(object : SimpleSeekListener() {
             override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
-                if (fromUser) camera?.cameraControl?.setLinearZoom(p / 100f)
+                if (fromUser) setTotalZoom(progressToZoom(p))
             }
         })
         focusSeek.setOnSeekBarChangeListener(object : SimpleSeekListener() {
@@ -178,21 +214,82 @@ class MainActivity : AppCompatActivity() {
                     scaling = true; return true
                 }
                 override fun onScale(d: ScaleGestureDetector): Boolean {
-                    val cam = camera ?: return true
-                    val z = cam.cameraInfo.zoomState.value ?: return true
-                    cam.cameraControl.setZoomRatio(
-                        (z.zoomRatio * d.scaleFactor).coerceIn(z.minZoomRatio, z.maxZoomRatio)
-                    )
+                    setTotalZoom(totalZoom * d.scaleFactor)
                     return true
                 }
             })
-        previewView.setOnTouchListener { _, e ->
+        touchLayer.setOnTouchListener { _, e ->
             scaleDetector.onTouchEvent(e)
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> scaling = false
                 MotionEvent.ACTION_UP -> if (!scaling) tapToFocus(e.x, e.y)
             }
             true
+        }
+    }
+
+    // Ses tuşlarıyla deklanşör (makroda telefonu sarsmamak için çok işe yarar)
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            if ((event?.repeatCount ?: 0) == 0) takePhoto()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    // ---------------- Yakınlaştırma ----------------
+
+    private fun progressToZoom(p: Int): Float {
+        if (maxTotalZoom <= camMin) return camMin
+        return camMin * (maxTotalZoom / camMin).pow(p / ZOOM_STEPS.toFloat())
+    }
+
+    private fun zoomToProgress(z: Float): Int {
+        if (maxTotalZoom <= camMin) return 0
+        return (ln(z / camMin) / ln(maxTotalZoom / camMin) * ZOOM_STEPS).toInt().coerceIn(0, ZOOM_STEPS)
+    }
+
+    private fun setTotalZoom(z: Float) {
+        val cam = camera ?: return
+        totalZoom = z.coerceIn(camMin, maxTotalZoom)
+        val camZ = totalZoom.coerceAtMost(camMax)
+        extraZoom = totalZoom / camZ
+        cam.cameraControl.setZoomRatio(camZ)
+        previewView.scaleX = extraZoom
+        previewView.scaleY = extraZoom
+        zoomText.text = "%.1fx".format(totalZoom)
+        zoomText.setTextColor(if (extraZoom > 1.01f) Color.parseColor("#FF7043") else Color.parseColor("#FFB300"))
+        zoomSeek.progress = zoomToProgress(totalZoom)
+    }
+
+    private fun buildPresets() {
+        presetRow.removeAllViews()
+        val values = mutableListOf<Float>()
+        if (camMin < 0.95f) values += camMin
+        values += listOf(1f, 2f, 5f, 10f, 20f, 30f, 50f, 80f)
+            .filter { it >= camMin && it < maxTotalZoom - 0.5f }
+        values += maxTotalZoom
+        val dp = resources.displayMetrics.density
+        for (v in values) {
+            val tv = TextView(this).apply {
+                text = when {
+                    v == maxTotalZoom -> "MAX ${v.toInt()}x"
+                    v < 1f -> "%.1fx".format(v)
+                    else -> "${v.toInt()}x"
+                }
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                setPadding((12 * dp).toInt(), (5 * dp).toInt(), (12 * dp).toInt(), (5 * dp).toInt())
+                background = GradientDrawable().apply {
+                    cornerRadius = 16 * dp
+                    setColor(if (v > camMax + 0.01f) 0x66FF7043 else 0x44FFFFFF)
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = (6 * dp).toInt() }
+                setOnClickListener { setTotalZoom(v) }
+            }
+            presetRow.addView(tv)
         }
     }
 
@@ -229,7 +326,6 @@ class MainActivity : AppCompatActivity() {
             .addCameraFilter(CameraFilter { list -> list.filter { cameraId(it) == id } })
             .build()
 
-        // En yüksek çözünürlük = en fazla gerçek ayrıntı
         val resolution = ResolutionSelector.Builder()
             .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
             .build()
@@ -272,9 +368,15 @@ class MainActivity : AppCompatActivity() {
         infoText.text = "Lens ${lensIndex + 1}/${backCameras.size}  •  En yakın odak: $closest"
         btnLens.text = "Lens ${lensIndex + 1}"
 
+        // Kameranın gerçek yakınlaştırma sınırları açılınca belli olur
         cam.cameraInfo.zoomState.observe(this) { z ->
-            zoomText.text = "%.1fx".format(z.zoomRatio)
-            zoomSeek.progress = (z.linearZoom * 100).toInt()
+            if (z.maxZoomRatio != camMax || z.minZoomRatio != camMin) {
+                camMin = z.minZoomRatio
+                camMax = z.maxZoomRatio
+                maxTotalZoom = camMax * EXTRA_ZOOM
+                buildPresets()
+                setTotalZoom(totalZoom)
+            }
         }
 
         val exp = cam.cameraInfo.exposureState
@@ -289,7 +391,7 @@ class MainActivity : AppCompatActivity() {
         evText.text = "Pozlama: ${exp.exposureCompensationIndex}"
 
         if (torchOn) cam.cameraControl.enableTorch(true)
-        if (macroMode) previewView.post { focusAt(previewView.width / 2f, previewView.height / 2f, false) }
+        if (macroMode) touchLayer.post { focusAt(touchLayer.width / 2f, touchLayer.height / 2f, false) }
     }
 
     private fun toggleMacro() {
@@ -297,7 +399,8 @@ class MainActivity : AppCompatActivity() {
         lensIndex = if (macroMode) {
             backCameras.indices.maxByOrNull { minFocusOf(backCameras[it]) } ?: 0
         } else 0
-        btnMacro.text = if (macroMode) "Makro: AÇIK" else "Makro: KAPALI"
+        totalZoom = 1f
+        btnMacro.text = if (macroMode) "Makro ●" else "Makro"
         bindCamera()
         if (macroMode) {
             toast("En yakına odaklanan lens seçildi. Odak kaçarsa biraz geri çekil ve yakınlaştır.")
@@ -308,7 +411,7 @@ class MainActivity : AppCompatActivity() {
         val cam = camera ?: return
         if (minFocusDiopter <= 0f) return
         manualFocus = true
-        val d = minFocusDiopter * p / 100f   // diyoptri: 0 = sonsuz
+        val d = minFocusDiopter * p / 100f
         Camera2CameraControl.from(cam.cameraControl).setCaptureRequestOptions(
             CaptureRequestOptions.Builder()
                 .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
@@ -324,7 +427,7 @@ class MainActivity : AppCompatActivity() {
         manualFocus = false
         focusSeek.progress = 0
         focusText.text = "Odak: Otomatik"
-        focusAt(previewView.width / 2f, previewView.height / 2f, true)
+        focusAt(touchLayer.width / 2f, touchLayer.height / 2f, true)
     }
 
     private fun tapToFocus(x: Float, y: Float) {
@@ -339,7 +442,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun focusAt(x: Float, y: Float, showRing: Boolean) {
         val cam = camera ?: return
-        val point = previewView.meteringPointFactory.createPoint(x, y)
+        // Dijital büyütme varken dokunulan noktayı gerçek görüntüdeki yerine çevir
+        val cx = previewView.width / 2f
+        val cy = previewView.height / 2f
+        val lx = cx + (x - cx) / extraZoom
+        val ly = cy + (y - cy) / extraZoom
+        val point = previewView.meteringPointFactory.createPoint(lx, ly)
         val action = FocusMeteringAction.Builder(
             point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
         ).setAutoCancelDuration(4, TimeUnit.SECONDS).build()
@@ -357,6 +465,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun takePhoto() {
         val ic = imageCapture ?: return
+        if (!btnCapture.isEnabled) return
+        val extra = extraZoom
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "MAKRO_${timestamp()}.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
@@ -374,15 +484,48 @@ class MainActivity : AppCompatActivity() {
         ic.takePicture(opts, ContextCompat.getMainExecutor(this),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(r: ImageCapture.OutputFileResults) {
-                    btnCapture.isEnabled = true
-                    r.savedUri?.let { lastUri = it; loadThumb(it) }
-                    toast("Kaydedildi: Resimler/MakroKamera  (düzenlemek için küçük resme dokun)")
+                    val uri = r.savedUri
+                    if (uri == null) { btnCapture.isEnabled = true; return }
+                    lifecycleScope.launch {
+                        if (extra > 1.01f) {
+                            withContext(Dispatchers.Default) { cropCenter(uri, extra) }
+                        }
+                        btnCapture.isEnabled = true
+                        lastUri = uri
+                        loadThumb(uri)
+                        toast("Kaydedildi: Resimler/MakroKamera")
+                    }
                 }
                 override fun onError(e: ImageCaptureException) {
                     btnCapture.isEnabled = true
                     toast("Çekim hatası: ${e.message}")
                 }
             })
+    }
+
+    /** Ekstra dijital yakınlaştırmada, ekranda görülen orta bölgeyi kırpar. */
+    private fun cropCenter(uri: Uri, factor: Float): Boolean {
+        var maxSide = 16000
+        while (maxSide >= 1024) {
+            try {
+                val full = ImageProcessor.decode(contentResolver, uri, maxSide)
+                val cw = (full.width / factor).toInt().coerceAtLeast(1)
+                val ch = (full.height / factor).toInt().coerceAtLeast(1)
+                val crop = Bitmap.createBitmap(full, (full.width - cw) / 2, (full.height - ch) / 2, cw, ch)
+                if (crop !== full) full.recycle()
+                contentResolver.openOutputStream(uri, "wt")?.use {
+                    crop.compress(Bitmap.CompressFormat.JPEG, 100, it)
+                }
+                crop.recycle()
+                return true
+            } catch (e: OutOfMemoryError) {
+                System.gc()
+                maxSide /= 2
+            } catch (e: Exception) {
+                return false
+            }
+        }
+        return false
     }
 
     private fun loadThumb(uri: Uri) {

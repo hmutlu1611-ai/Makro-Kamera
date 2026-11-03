@@ -12,7 +12,7 @@ import android.view.ScaleGestureDetector
 import androidx.appcompat.widget.AppCompatImageView
 import kotlin.math.min
 
-/** İki parmakla 20 kata kadar büyütme, kaydırma ve çift dokunma ile yakınlaştırma. */
+/** İki parmakla 50 kata kadar büyütme, kaydırma ve çift dokunma ile yakınlaştırma. */
 class ZoomImageView @JvmOverloads constructor(
     ctx: Context, attrs: AttributeSet? = null
 ) : AppCompatImageView(ctx, attrs) {
@@ -27,7 +27,7 @@ class ZoomImageView @JvmOverloads constructor(
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(d: ScaleGestureDetector): Boolean {
                 val cur = currentScale()
-                val target = (cur * d.scaleFactor).coerceIn(baseScale, baseScale * 20f)
+                val target = (cur * d.scaleFactor).coerceIn(baseScale, baseScale * 50f)
                 val f = target / cur
                 m.postScale(f, f, d.focusX, d.focusY)
                 apply()

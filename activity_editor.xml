@@ -24,8 +24,9 @@
     </FrameLayout>
 
     <ScrollView
+        android:id="@+id/adjustPanel"
         android:layout_width="match_parent"
-        android:layout_height="230dp">
+        android:layout_height="180dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -102,6 +103,15 @@
         android:padding="8dp">
 
         <Button
+            android:id="@+id/btnPanel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:text="Gizle"
+            android:textSize="12sp" />
+
+        <Button
             android:id="@+id/btnRotate"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -116,7 +126,7 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="4dp"
             android:layout_weight="1"
-            android:text="Önce (basılı tut)"
+            android:text="Önce"
             android:textSize="12sp" />
 
         <Button

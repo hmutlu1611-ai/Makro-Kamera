@@ -4,8 +4,14 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
+    <!-- Tam ekran kamera görüntüsü -->
     <androidx.camera.view.PreviewView
         android:id="@+id/previewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <View
+        android:id="@+id/touchLayer"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
@@ -16,91 +22,99 @@
         android:alpha="0"
         android:background="@drawable/focus_ring" />
 
+    <!-- Üst ince şerit -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
-        android:background="#88000000"
-        android:orientation="vertical"
-        android:paddingStart="8dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="8dp"
-        android:paddingBottom="6dp">
+        android:background="#55000000"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:padding="4dp">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
+        <Button android:id="@+id/btnMacro" style="@style/SmallBtn"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="Makro" />
 
-            <Button
-                android:id="@+id/btnMacro"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:layout_weight="1"
-                android:text="Makro: KAPALI"
-                android:textSize="12sp" />
+        <Button android:id="@+id/btnLens" style="@style/SmallBtn"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="Lens 1" />
 
-            <Button
-                android:id="@+id/btnLens"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:layout_weight="1"
-                android:text="Lens 1"
-                android:textSize="12sp" />
+        <Button android:id="@+id/btnTorch" style="@style/SmallBtn"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="Işık" />
 
-            <Button
-                android:id="@+id/btnTorch"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Işık: KAPALI"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/infoText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp" />
+        <Button android:id="@+id/btnSettings" style="@style/SmallBtn"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:text="Ayar ▼" />
     </LinearLayout>
 
+    <!-- Alt panel -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="#99000000"
+        android:background="#55000000"
         android:orientation="vertical"
-        android:padding="12dp">
+        android:paddingStart="10dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="10dp">
 
+        <!-- Gizlenebilir ayarlar -->
         <LinearLayout
+            android:id="@+id/settingsPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="vertical"
+            android:visibility="gone">
 
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Yakınlaştırma"
-                android:textColor="#FFFFFF" />
+            <TextView android:id="@+id/infoText"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textColor="#FFFFFF" android:textSize="12sp" />
 
-            <TextView
-                android:id="@+id/zoomText"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="1.0x"
-                android:textColor="#FFB300"
-                android:textStyle="bold" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView android:id="@+id/focusText"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:text="Odak: Otomatik"
+                    android:textColor="#FFFFFF" android:textSize="13sp" />
+
+                <Button android:id="@+id/btnAf" style="@style/SmallBtn"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Oto Odak" android:textColor="#FFB300" />
+            </LinearLayout>
+
+            <SeekBar android:id="@+id/focusSeek"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:max="100" />
+
+            <TextView android:id="@+id/evText"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Pozlama: 0" android:textColor="#FFFFFF" android:textSize="13sp" />
+
+            <SeekBar android:id="@+id/evSeek"
+                android:layout_width="match_parent" android:layout_height="wrap_content" />
         </LinearLayout>
 
-        <SeekBar
-            android:id="@+id/zoomSeek"
+        <!-- Hızlı yakınlaştırma düğmeleri -->
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:max="100" />
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/presetRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp" />
+        </HorizontalScrollView>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -108,87 +122,48 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/focusText"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Odak: Otomatik"
-                android:textColor="#FFFFFF" />
-
-            <Button
-                android:id="@+id/btnAf"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Oto Odak" />
-        </LinearLayout>
-
-        <SeekBar
-            android:id="@+id/focusSeek"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="100" />
-
-        <TextView
-            android:id="@+id/evText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Pozlama: 0"
-            android:textColor="#FFFFFF" />
-
-        <SeekBar
-            android:id="@+id/evSeek"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <ImageView
-                android:id="@+id/thumb"
-                android:layout_width="60dp"
-                android:layout_height="60dp"
-                android:background="#333333"
-                android:contentDescription="Son fotoğraf"
-                android:scaleType="centerCrop" />
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
+            <SeekBar android:id="@+id/zoomSeek"
+                android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" />
 
-            <ImageButton
-                android:id="@+id/btnCapture"
-                android:layout_width="78dp"
-                android:layout_height="78dp"
+            <TextView android:id="@+id/zoomText"
+                android:layout_width="64dp" android:layout_height="wrap_content"
+                android:gravity="end" android:text="1.0x"
+                android:textColor="#FFB300" android:textSize="16sp" android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView android:id="@+id/thumb"
+                android:layout_width="52dp" android:layout_height="52dp"
+                android:background="#333333" android:contentDescription="Son fotoğraf"
+                android:scaleType="centerCrop" />
+
+            <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+
+            <ImageButton android:id="@+id/btnCapture"
+                android:layout_width="72dp" android:layout_height="72dp"
                 android:background="@drawable/capture_button"
                 android:contentDescription="Fotoğraf çek" />
 
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
+            <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
 
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <Button
-                    android:id="@+id/btnScan"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                <Button android:id="@+id/btnScan" style="@style/SmallBtn"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="Tara" />
 
-                <Button
-                    android:id="@+id/btnGallery"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                <Button android:id="@+id/btnGallery" style="@style/SmallBtn"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="Galeri" />
             </LinearLayout>
         </LinearLayout>
